@@ -399,5 +399,5 @@ with tab_live_stream:
             "video": True,
             "audio": False,
         },
-        video_transformer_factory=ObjectDetector,
+        video_processor_factory=ObjectDetector,
     )
