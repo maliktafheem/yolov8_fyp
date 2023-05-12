@@ -1,6 +1,8 @@
+av
 deep_sort_realtime
 numpy
 opencv_python_headless
 stqdm
 streamlit
+streamlit_webrtc
 ultralytics
