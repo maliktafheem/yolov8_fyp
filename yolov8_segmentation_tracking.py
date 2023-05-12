@@ -315,7 +315,7 @@ model_select = st.selectbox(
         # "yolov8m-seg",
         # "yolov8l-seg",
         # "yolov8x-seg",
-        "best_m"
+        "best_n"
     ],
 )
 print(f"Selected ultralytics YOLOv8 model: {model_select}.pt")
