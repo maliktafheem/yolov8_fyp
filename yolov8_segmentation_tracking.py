@@ -9,6 +9,10 @@ from collections import deque
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from stqdm import stqdm
 import streamlit as st
+from streamlit_webrtc import WebRtcMode, webrtc_streamer, VideoTransformerBase
+from typing import List, Tuple
+import av
+
 
 # colors for visualization for image visualization
 COLORS = [
@@ -33,6 +37,21 @@ COLORS = [
     (200, 149, 255),
     (199, 55, 255),
 ]
+
+
+def process_frame(frame: av.VideoFrame) -> Tuple[av.VideoFrame, List]:
+    # Convert the frame to a numpy array
+    image = frame.to_ndarray(format="bgr24")
+
+    # Process the image using the YOLOv8 model
+    image, result_list_json = image_processing(
+        image, model, tracker=tracker, centers=centers
+    )
+
+    # Convert the processed image back to an av.VideoFrame object
+    processed_frame = av.VideoFrame.from_ndarray(image, format="bgr24")
+
+    return processed_frame, result_list_json
 
 
 def result_to_json(result: Results, tracker=None):
@@ -297,6 +316,23 @@ def video_processing(
     return video_file_name_out, result_video_json_file
 
 
+class ObjectDetector(VideoTransformerBase):
+    def __init__(self):
+        self.tracker = DeepSort(max_age=5)
+        self.centers = [deque(maxlen=30) for _ in range(10000)]
+
+    def transform(self, frame):
+        image = frame.to_ndarray(format="bgr24")
+        image, result_list_json = image_processing(
+            image, model, tracker=self.tracker, centers=self.centers
+        )
+        return image
+
+    def on_stop(self):
+        self.tracker.delete_all_tracks()
+        self.centers.clear()
+
+
 st.set_page_config(
     page_title="YOLOv8 Processing App", layout="wide", page_icon="./favicon-yolo.ico"
 )
@@ -351,41 +387,17 @@ with tab_video:
             video_file.name, model, tracker=tracker, centers=centers
         )
         os.remove(video_file.name)
-        # print(json.dumps(result_video_json_file, indent=2))
         video_bytes = open(video_file_out, "rb").read()
         st.video(video_bytes)
 
 with tab_live_stream:
     st.header("Live Stream Processing using YOLOv8")
-    CAM_ID = st.text_input(
-        "Enter a live stream source (number for webcam, RTSP or HTTP(S) URL):", "0"
+    webrtc_ctx = webrtc_streamer(
+        key="example",
+        mode=WebRtcMode.SENDRECV,
+        media_stream_constraints={
+            "video": True,
+            "audio": False,
+        },
+        video_transformer_factory=ObjectDetector,
     )
-    if CAM_ID.isnumeric():
-        CAM_ID = int(CAM_ID)
-    col_run, col_stop = st.columns(2)
-    run = col_run.button("Start Live Stream Processing")
-    stop = col_stop.button("Stop Live Stream Processing")
-    if stop:
-        run = False
-    FRAME_WINDOW = st.image([], width=1280)
-    if run:
-        cam = cv2.VideoCapture(CAM_ID)
-        cam.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        tracker = DeepSort(max_age=5)
-        centers = [deque(maxlen=30) for _ in range(10000)]
-        while True:
-            ret, image = cam.read()
-            if not ret:
-                st.error(
-                    "Failed to capture stream from this camera stream. Please try again."
-                )
-                break
-            image, result_list_json = image_processing(
-                image, model, tracker=tracker, centers=centers
-            )
-            # print(json.dumps(result_list_json, indent=2))
-            FRAME_WINDOW.image(image, channels="BGR", width=1280)
-        cam.release()
-        tracker.delete_all_tracks()
-        centers.clear()
